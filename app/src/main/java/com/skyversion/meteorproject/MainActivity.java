@@ -28,6 +28,8 @@ import org.json.JSONObject;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
+import java.util.Timer;
+import java.util.TimerTask;
 
 
 public class MainActivity extends Activity {
@@ -37,6 +39,8 @@ public class MainActivity extends Activity {
     private final Handler mHandler = new Handler();
     private Button sendMsgBtn;
     private JSONArray jsonArray;
+    private TimerTask mTask;
+    private Timer mTimer;
 
     private String[] bank = {"국민", "농협"};
     private String[] receiveNumber = {"15881788", "15881600"}; // KB, NongHyup, Busan, woori
@@ -51,7 +55,7 @@ public class MainActivity extends Activity {
     private boolean getPreferences(){
         SharedPreferences sp = getSharedPreferences("pref", MODE_PRIVATE);
 
-        if(sp.contains("isFirst"))
+        if(sp.contains("a"))
             return true;
 
         return false;
@@ -62,21 +66,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        if(getPreferences()){
-            Toast.makeText(MainActivity.this, "OK", Toast.LENGTH_SHORT).show();
-            smsJson();
-        }
-
-        else{
-            SharedPreferences sp = getSharedPreferences("pref", MODE_PRIVATE);
-            SharedPreferences.Editor edit = sp.edit();
-            edit.putBoolean("isFirst", true);
-            edit.commit();
-        }// isFirst 가 없을 시 생성함.
-
-        webView = (WebView) findViewById(R.id.webView);
-        textView = (TextView) findViewById(R.id.textView);
-        sendMsgBtn = (Button) findViewById(R.id.button);
+        init();
 
         webView.setWebViewClient(new WebClient());
         webView.getSettings().setJavaScriptEnabled(true); // javascript permission
@@ -89,6 +79,7 @@ public class MainActivity extends Activity {
             @Override
             public boolean onJsAlert(WebView view, String url, String message, JsResult result) {
                 Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show();
+
                 result.confirm();
                 return true;
 //                return super.onJsAlert(view, url, message, result);
@@ -102,7 +93,30 @@ public class MainActivity extends Activity {
                 smsJson();
             }
         }); // android -> web
+
+        mTask = new TimerTask() {
+            @Override
+            public void run() {
+                if(getPreferences()){}
+                else{
+                    SharedPreferences sp = getSharedPreferences("pref", MODE_PRIVATE);
+                    SharedPreferences.Editor edit = sp.edit();
+                    edit.putBoolean("a", true);
+                    edit.commit();
+                    smsJson();
+                }// isFirst 가 없을 시 생성함
+            }
+        };
+
+        mTimer = new Timer();
+        mTimer.schedule(mTask, 1000);
     }
+
+    private void init(){
+        webView = (WebView) findViewById(R.id.webView);
+        textView = (TextView) findViewById(R.id.textView);
+        sendMsgBtn = (Button) findViewById(R.id.button);
+    } // 생성
 
     private void smsJson(){
         jsonArray = new JSONArray();
@@ -110,10 +124,10 @@ public class MainActivity extends Activity {
         for(int i=0;i<bank.length;i++)
             inbox(MainActivity.this, receiveNumber[i], bank[i]);
 
-//                inbox(MainActivity.this, receiveNumber[0], bank[0]);
         webView.loadUrl("javascript:parser(" + jsonArray.toString() + ")");
+
         jsonArray = null;
-    }
+    } // 문자 파싱을 한 후 json으로 변경하여 웹에 전송
 
     private void inbox(Context context, String receiveNumber, String bankName){
         Cursor c;
@@ -128,7 +142,8 @@ public class MainActivity extends Activity {
         ContentResolver cr = context.getContentResolver();
 
         // Fetch Inbox SMS Message from Built-in Content Provider
-        c = cr.query(inboxURI, reqCols, "address LIKE "+receiveNumber, null, null);
+        //c = cr.query(inboxURI, reqCols, "address LIKE "+receiveNumber, null, null);
+        c = cr.query(inboxURI, reqCols, "address like '" + receiveNumber + "'", null, null);
 
         DateFormat formatter = new SimpleDateFormat("yyyy/MM/dd hh:mm:ss.SSS");
         Calendar calendar = Calendar.getInstance();
@@ -138,8 +153,9 @@ public class MainActivity extends Activity {
         long milliSecond;
 
         if(c != null) {
+            Log.d("TAGTAG", String.valueOf(c.getCount()));
             while (c.moveToNext()) {
-                Log.d("TAG : ", c.getString(2));
+                //Log.d("TAG : ", c.getString(2));
                 // query를 하여 받아온 리스트들이 끝날 때 까지 돌아감.
                 paymentList = c.getString(2).split("\n");
                 // SMS Parsing의 내용은 \n으로 구분한다.
@@ -216,7 +232,7 @@ public class MainActivity extends Activity {
                         day = sb.substring(3, 5);
                         time = sb.substring(6, 11);
                         sb.delete(0, sb.length());
-                        Log.d("TAG", time);
+//                        Log.d("TAG", time);
                     } // payment Time
                 }
 
@@ -262,6 +278,12 @@ public class MainActivity extends Activity {
             });
         }
     } // Javascript -> Android
+
+    @Override
+    protected void onDestroy() {
+        mTimer.cancel();
+        super.onDestroy();
+    }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
